@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FogCast Lite – v0.8.5 (external JS)</title>
+  <meta name="description" content="10-day fog risk forecast with hourly breakdown and sunrise/sunset (24h). Uses Open-Meteo; no API key required.">
+  <style>
+    :root{ --bg:#0b0f14; --card:#111827; --muted:#6b7280; --text:#e5e7eb; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --info:#3b82f6; --err:#ef4444; }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b0f14,#0d1320);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    .wrap{max-width:1000px;margin:20px auto;padding:0 14px}
+    header{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+    .logo{width:34px;height:34px;border-radius:10px;background:#121a2a;display:grid;place-items:center}
+    h1{font-size:18px;margin:0}
+    .panel{background:var(--card);border:1px solid #1f2937;padding:12px;border-radius:14px;box-shadow:0 6px 24px #0003;margin-bottom:12px}
+    .controls{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
+    input[type="text"]{background:#0a1220;border:1px solid #1f2937;color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
+    .btn{background:#6d28d9;border:none;color:white;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+    .btn.geo{background:#1d4ed8}
+    .btn.ghost{background:transparent;border:1px solid #273245;color:#cbd5e1}
+    .small{font-size:12px;color:#9ca3af}
+    .days{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+    .days::-webkit-scrollbar{height:8px}.days::-webkit-scrollbar-thumb{background:#253046;border-radius:999px}
+    .day{min-width:230px;max-width:250px;scroll-snap-align:start;background:linear-gradient(180deg,#0e1626,#0b121d);border:1px solid #1f2433;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:8px;cursor:pointer}
+    .day.selected{border-color:#3b82f6;box-shadow:0 0 0 2px #1e3a8a66 inset}
+    .muted{color:var(--muted);font-size:12px}
+    .pill{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid #2a3344;background:#0a1220}
+    .bar{height:8px;border-radius:6px;background:#111827;border:1px solid #1f2937;overflow:hidden}
+    .bar > span{display:block;height:100%;width:0%}
+    .risk{font-weight:700}.risk.low{color:var(--ok)}.risk.med{color:var(--warn)}.risk.high{color:var(--bad)}
+    .mini-hourly{display:grid;grid-template-columns:28px 1fr;gap:6px;align-items:center;margin-top:6px}
+    .mini-hourly .ticks{display:grid;grid-template-rows:repeat(24,1fr);gap:2px}
+    .mini-hourly .ticks div{font-size:10px;color:#9ca3af;text-align:right;opacity:.9}
+    .mini-hourly .cols{display:grid;grid-template-rows:repeat(24,1fr);gap:2px}
+    .mini-hourly .hbar{height:8px;border:1px solid #213047;background:#0a1220;border-radius:4px;overflow:hidden}
+    .mini-hourly .hbar span{display:block;height:100%;width:0}
+    .hourly{display:grid;grid-template-columns:repeat(24,1fr);gap:5px;align-items:end;margin-top:8px}
+    .hourly .bar{height:90px;border:1px solid #1f2937;background:#0b1220;display:flex;align-items:flex-end;border-radius:6px;overflow:hidden}
+    .hourly .bar span{width:100%}
+    .axis{display:grid;grid-template-columns:repeat(24,1fr);gap:5px;margin-top:6px}
+    .axis .tick{font-size:10px;color:#9ca3af;text-align:center}
+    .sunaxis{margin-top:4px}
+    .geo-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0a1220;border:1px solid #223047;color:#cbd5e1;padding:10px 12px;border-radius:10px;margin-bottom:10px}
+    .status{background:#0a1220;border:1px solid #1f2937;padding:10px;border-radius:10px;margin-top:8px}
+    .status .ok{color:var(--ok)} .status .info{color:var(--info)} .status .err{color:var(--err)}
+    @media (max-width:760px){.controls{grid-template-columns:1fr auto auto}.day{min-width:86vw;max-width:88vw}#desktopHourly{display:none}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">🌫️</div>
+      <div><h1>FogCast Lite • 10-Day Fog Risk</h1><div class="small">Open-Meteo only • sunrise/sunset (24h)</div></div>
+    </header>
+
+    <section class="panel">
+      <div id="geoBanner" class="geo-banner" hidden>
+        <div>Use your location for faster local forecast?</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn geo" id="geoAllow">Yes</button>
+          <button class="btn ghost" id="geoDismiss">Not now</button>
+        </div>
+      </div>
+      <div class="controls">
+        <input id="location" type="text" placeholder="Enter a place (e.g., Sheffield, UK)" value="Sheffield, UK" />
+        <button class="btn" id="go">Get 10-Day</button>
+        <button class="btn geo" id="useGeo" title="Use my location">📍</button>
+        <button class="btn ghost" id="selfTest">Run self-check</button>
+      </div>
+      <div class="small">Type a city and press “Get 10-Day”. If it fails, use the self-check to see what’s wrong.</div>
+      <div id="status" class="status small" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="small">Scroll horizontally. Each card shows a vertical hourly chart (00–23) and ↑/↓ times.</div>
+      <div id="days" class="days" role="list"></div>
+    </section>
+
+    <section id="desktopHourly" class="panel" aria-live="polite">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div id="hourTitle" style="font-weight:700">Select a day above</div><div id="hourSubtitle" class="small"></div></div>
+        <div class="small">Legend: <span style="color:var(--ok)">Low</span> • <span style="color:var(--warn)">Med</span> • <span style="color:var(--bad)">High</span></div>
+      </div>
+      <div id="hourGrid" class="hourly" aria-hidden="true"></div>
+      <div id="hourAxis" class="axis"></div>
+      <div id="sunAxis" class="axis sunaxis"></div>
+    </section>
+
+    <section class="panel small">
+      Build <span id="buildId"></span> • <span id="buildHash" class="small"></span>
+    </section>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
