@@ -1,7 +1,7 @@
-// FogCast v0.8.6 – Sticky Scroller Edition (patched for no #status element)
+// FogCast v0.8.7 – Sticky Scroller Loop Fix + Click-Center
 
 // Build tag
-document.getElementById('buildId').textContent = '0.8.6';
+document.getElementById('buildId').textContent = '0.8.7';
 document.getElementById('buildHash').textContent = Math.random().toString(36).slice(2,8);
 
 // Elements
@@ -45,10 +45,10 @@ if (!sessionStorage.getItem('geoPrompted')) {
   sessionStorage.setItem('geoPrompted', '1');
 }
 
-// --- Sticky scroller snap helpers ---
+// --- Sticky scroller snap helpers (no infinite scroll loop) ---
 function findNearestCard(container){
   const mid = container.getBoundingClientRect().left + container.clientWidth/2;
-  let best = null, bestDist = 1e9;
+  let best = null, bestDist = Infinity;
   for(const card of container.querySelectorAll('.day')){
     const r = card.getBoundingClientRect();
     const center = (r.left + r.right)/2;
@@ -57,17 +57,16 @@ function findNearestCard(container){
   }
   return best;
 }
-function snapDays(container){
+function selectNearestAfterScroll(container){
   const target = findNearestCard(container);
   if(!target) return;
-  target.scrollIntoView({behavior:'smooth', inline:'start', block:'nearest'});
-  target.click();
+  target.click(); // select without scrolling
 }
 function initDaySnap(container){
   let t = null;
   container.addEventListener('scroll', () => {
-    if(t) clearTimeout(t);
-    t = setTimeout(() => snapDays(container), 120);
+    if (t) clearTimeout(t);
+    t = setTimeout(() => selectNearestAfterScroll(container), 150);
   }, { passive: true });
 }
 
@@ -116,8 +115,7 @@ function buildDayCards(data, label){
   const sr = data.daily.sunrise.map(t => new Date(t));
   const ss = data.daily.sunset.map(t => new Date(t));
 
-  // Build a quick index for hours by day & hour
-  const byDayHour = new Map(); // key 'YYYY-MM-DD|HH' -> km visibility
+  const byDayHour = new Map();
   for(let i=0;i<hourDt.length;i++){
     const d = hourDt[i];
     const key = d.toISOString().slice(0,10) + '|' + String(d.getHours()).padStart(2,'0');
@@ -133,7 +131,7 @@ function buildDayCards(data, label){
     const ticks = Array.from({length:24}, (_,h)=>`<div>${String(h).padStart(2,'0')}</div>`).join('');
     const cols = Array.from({length:24}, (_,h)=>{
       const km = byDayHour.get(`${dayKey}|${String(h).padStart(2,'0')}`) ?? 0;
-      const pct = Math.max(0, Math.min(100, (10 - km) * 10)); // 0km ->100%, 10km->0%
+      const pct = Math.max(0, Math.min(100, (10 - km) * 10));
       const color = pct < 34 ? 'var(--ok)' : pct < 67 ? 'var(--warn)' : 'var(--bad)';
       return `<div class="hbar"><span style="width:${pct}%;background:${color}"></span></div>`;
     }).join('');
@@ -149,10 +147,13 @@ function buildDayCards(data, label){
       </div>
       <div class="small">↑ ${sr[d].getHours().toString().padStart(2,'0')}:${sr[d].getMinutes().toString().padStart(2,'0')} • ↓ ${ss[d].getHours().toString().padStart(2,'0')}:${ss[d].getMinutes().toString().padStart(2,'0')}</div>
     `;
-    card.addEventListener('click', () => buildHourlyForDay(d, data, label));
+    card.addEventListener('click', () => {
+      buildHourlyForDay(d, data, label);
+      // optional: center this card smoothly on click
+      card.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+    });
     daysEl.appendChild(card);
   }
-  // auto-select first and enable snap
   if(daysEl.firstElementChild) daysEl.firstElementChild.click();
   initDaySnap(daysEl);
 }
@@ -172,7 +173,6 @@ function buildHourlyForDay(dayIndex, data, label){
   hourAxis.innerHTML = '';
   sunAxis.innerHTML = '';
 
-  // map for quick lookup
   const byHour = new Map();
   for(let i=0;i<hourDt.length;i++){
     const d = hourDt[i];
@@ -197,7 +197,6 @@ function buildHourlyForDay(dayIndex, data, label){
     hourAxis.appendChild(tick);
   }
 
-  // sunrise/sunset markers
   const sr = new Date(data.daily.sunrise[dayIndex]);
   const ss = new Date(data.daily.sunset[dayIndex]);
   for(let h = 0; h < 24; h++){
